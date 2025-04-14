@@ -3,6 +3,6 @@ Proyecto Final "# Fake News Detector"
 Integrantes:
 
 Gloria
-Ana
+Ana Maria Ramirez Campabadal
 Reychell Segura Fernandez
 
