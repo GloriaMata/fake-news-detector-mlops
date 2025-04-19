@@ -12,57 +12,65 @@ import joblib
 # 1. Cargar el dataset
 df = pd.read_csv("fake_news_dataset.csv")  # Ajusta el path si lo corres localmente
 
-# 2. Definir target y features
-X = df.drop(columns=["label", "id", "title", "date_published", "text"])
-y = df["label"]
-text_data = df["text"]
+# PREPROCESSING
+# --------------------------------------------
 
-# 3. Separación de datos
-X_train, X_test, y_train, y_test, text_train, text_test = train_test_split(
-    X, y, text_data, test_size=0.2, random_state=42, stratify=y
-)
+y = df["label”]
+X = df.drop(["id",  “label”], axis=1)
+df = df.dropna()
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
-# 4. Columnas categóricas y numéricas
-cat_cols = ["author", "state", "source", "category", "political_bias", "fact_check_rating"]
-num_cols = [col for col in X.columns if col not in cat_cols]
 
-# 5. Preprocesamiento por tipo de dato
-preprocessor = ColumnTransformer([
-    ("num", Pipeline([
-        ("imputer", SimpleImputer(strategy="mean")),
-        ("scaler", StandardScaler())
-    ]), num_cols),
-    ("cat", Pipeline([
-        ("imputer", SimpleImputer(strategy="most_frequent")),
-        ("encoder", OneHotEncoder(handle_unknown="ignore"))
-    ]), cat_cols),
-    ("text", TfidfVectorizer(max_features=1000, stop_words="english"), "text")
+# --------------------------------------------
+# PIPELINE, normaliza los datos y utilizamos modelo de regresión logística
+# --------------------------------------------
+pipeline = Pipeline(steps=[
+    ('scaler', StandardScaler()),
+    ('classifier', LogisticRegression())
 ])
 
-# 6. Combinar texto con X
-X_train_full = X_train.copy()
-X_train_full["text"] = text_train
-X_test_full = X_test.copy()
-X_test_full["text"] = text_test
-
-# 7. Pipeline completo
-pipeline = Pipeline([
-    ("preprocessing", preprocessor),
-    ("clf", RandomForestClassifier(random_state=42))
-])
-
-# 8. Búsqueda de hiperparámetros
-param_grid = {
-    "clf__n_estimators": [100, 200],
-    "clf__max_depth": [10, 20]
+# --------------------------------------------
+# HYPERPARAMETER OPTIMIZATION
+# --------------------------------------------
+param_grid_logreg = {
+    'classifier__C': [0.1, 1, 10, 100]
 }
 
-grid_search = GridSearchCV(pipeline, param_grid, cv=3, scoring="accuracy", verbose=1)
-grid_search.fit(X_train_full, y_train)
+# --------------------------------------------
+# TRAINING
+# --------------------------------------------
+grid_search_log_reg = GridSearchCV(pipeline, param_grid_logreg, cv=5, n_jobs=-1)
+grid_search_log_reg.fit(X_train, y_train)
 
-# 9. Evaluación
-y_pred = grid_search.predict(X_test_full)
-print(classification_report(y_test, y_pred))
+# --------------------------------------------
+# BEST MODEL SELECTION
+# --------------------------------------------
+best_params = grid_search_log_reg.best_params_
+best_model = grid_search_log_reg.best_estimator_
+coefficients = best_model.named_steps['classifier'].coef_[0]
+feature_names = X_train.columns
 
-# 10. Guardar el modelo
-joblib.dump(grid_search.best_estimator_, "fake_news_classifier.joblib")
+plt.figure(figsize=(10, 6))
+plt.barh(feature_names, coefficients, color='skyblue')
+plt.xlabel('Coeficiente')
+plt.title('Importancia de las características en el modelo de regresión logística')
+plt.savefig("feature_importance.png", dpi=120)
+plt.close()
+
+# --------------------------------------------
+# METRICS
+# --------------------------------------------
+y_pred = best_model.predict(X_test)
+accuracy = accuracy_score(y_test, y_pred)
+
+with open("metrics.txt", 'w') as outfile:
+    outfile.write("Training accuracy: %2.1f%%\n" % accuracy)
+
+# --------------------------------------------
+# SERIALIZING
+# --------------------------------------------
+model_filename = 'model/logistic_regression_model.pkl'
+joblib.dump(best_model, model_filename)
+
+print("----- The train process finished -----")
+
